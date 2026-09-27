@@ -1,0 +1,58 @@
+name: Build SideStore-compatible IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Read repository Flutter version
+        run: |
+          flutter_version=$(./.github/workflows/get_flutter_version.sh)
+          echo "FLUTTER_VERSION=$flutter_version" >> "$GITHUB_ENV"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build unsigned iOS app
+        run: flutter build ios --release --no-codesign
+
+      - name: Inspect, ad-hoc sign, and verify executable code
+        run: python3 .github/scripts/sign_ios.py build/ios/iphoneos/Runner.app
+
+      - name: Package and verify IPA
+        run: |
+          staging=$(mktemp -d)
+          trap 'rm -rf "$staging"' EXIT
+          mkdir -p "$staging/Payload"
+          ditto build/ios/iphoneos/Runner.app "$staging/Payload/Runner.app"
+          (cd "$staging" && zip -q -r -9 -y "$GITHUB_WORKSPACE/e1547-sidestore.ipa" Payload)
+          unzip -tq e1547-sidestore.ipa
+          unzip -q e1547-sidestore.ipa -d "$staging/verify"
+          python3 .github/scripts/sign_ios.py --verify-only "$staging/verify/Payload/Runner.app"
+          unzip -Z -1 e1547-sidestore.ipa | sed -n '1,20p'
+
+      - name: Upload test IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: e1547-sidestore
+          path: e1547-sidestore.ipa
+          if-no-files-found: error
+          compression-level: 0
