@@ -11,6 +11,24 @@
       {
         "amount": 3.0,
         "currency": "USD",
+        "date": "2026-11-07T09:10:00",
+        "platform": "ko-fi"
+      },
+      {
+        "amount": 3.0,
+        "currency": "USD",
+        "date": "2026-10-07T09:10:00",
+        "platform": "ko-fi"
+      },
+      {
+        "amount": 3.0,
+        "currency": "USD",
+        "date": "2026-09-07T09:01:00",
+        "platform": "ko-fi"
+      },
+      {
+        "amount": 3.0,
+        "currency": "USD",
         "date": "2026-08-07T10:10:00",
         "platform": "ko-fi"
       },
@@ -183,10 +201,16 @@
     "avatar": "https://github.com/KOMBINE.png",
     "handles": {
       "e621": "SUDA_IDU",
-      "ko-fi": "\u0421\u0430\u0448\u0430 \u041c\u0430\u0437\u0443\u0440\u0435\u043d\u043a\u043e",
+      "ko-fi": "KOMBINE",
       "github": "KOMBINE"
     },
     "donations": [
+      {
+        "amount": 3.0,
+        "currency": "USD",
+        "date": "2026-11-18T16:18:00",
+        "platform": "ko-fi"
+      },
       {
         "amount": 3.0,
         "currency": "USD",
@@ -454,6 +478,24 @@
       "github": "hunting4code"
     },
     "donations": [
+      {
+        "amount": 45.0,
+        "currency": "USD",
+        "date": "2026-10-20T15:18:00",
+        "platform": "ko-fi"
+      },
+      {
+        "amount": 45.0,
+        "currency": "USD",
+        "date": "2026-09-20T15:22:00",
+        "platform": "ko-fi"
+      },
+      {
+        "amount": 45.0,
+        "currency": "USD",
+        "date": "2026-08-20T15:16:00",
+        "platform": "ko-fi"
+      },
       {
         "amount": 45.0,
         "currency": "USD",

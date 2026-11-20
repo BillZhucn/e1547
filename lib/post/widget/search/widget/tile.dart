@@ -32,6 +32,20 @@ class PostImageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isSkeleton(context)) {
+      final CardThemeData card = Theme.of(context).cardTheme;
+      final ShapeBorder? shape = card.shape;
+      return Padding(
+        padding: card.margin ?? const EdgeInsets.all(4),
+        child: Bone(
+          width: double.infinity,
+          height: double.infinity,
+          borderRadius: shape is RoundedRectangleBorder
+              ? shape.borderRadius
+              : BorderRadius.circular(AppStyle.of(context).smallRadius),
+        ),
+      );
+    }
     return Card(
       clipBehavior: Clip.antiAlias,
       child: SelectionItemOverlay(
@@ -46,8 +60,12 @@ class PostImageTile extends StatelessWidget {
                 Expanded(
                   child: PostTileOverlay(
                     post: post,
-                    child: Hero(
+                    child: ContentHero(
                       tag: post.link,
+                      content: FittedContent(
+                        fit: fit ?? BoxFit.cover,
+                        aspectRatio: post.width / post.height,
+                      ),
                       child: PostImageWidget(
                         post: post,
                         size: size ?? PostImageSize.sample,
@@ -101,22 +119,16 @@ class PostImageTag extends StatelessWidget {
 class PostTileOverlay extends StatelessWidget {
   const PostTileOverlay({super.key, required this.post, required this.child});
 
-  final Post post;
+  final PostSummary post;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    if (post.isDeleted) {
-      return const Center(child: Text('deleted'));
-    }
-    if (post.type == PostType.unsupported) {
-      return const Center(child: Text('unsupported'));
-    }
-    if (post.file == null) {
-      return const Center(child: Text('unavailable'));
-    }
-    return child;
-  }
+  Widget build(BuildContext context) => switch (postFileIcon(context, post)) {
+    final IconData icon => Center(
+      child: Icon(icon, color: dimTextColor(context)),
+    ),
+    null => child,
+  };
 }
 
 class PostInfoBar extends StatelessWidget {
@@ -206,7 +218,7 @@ void defaultPushPostDetail(BuildContext context, Post post) {
   final params = context.read<PostParamsController?>();
   final filter = context.read<PostFilter?>();
   Navigator.of(context).push(
-    MaterialPageRoute(
+    DismissRoute<void>(
       builder: (context) => ImageCacheSizeProvider(
         size: cacheSize,
         child: PostRouteScope(
@@ -303,9 +315,10 @@ class PostFeedTile extends StatelessWidget {
                   score: post.score,
                   onUpvote: enabled
                       ? (isLiked) async {
-                          mutate((upvote: true, replace: !isLiked)).catchError((
-                            error,
-                          ) {
+                          if ((await mutate((
+                            upvote: true,
+                            replace: !isLiked,
+                          ))).isError) {
                             messenger.showSnackBar(
                               SnackBar(
                                 duration: const Duration(seconds: 1),
@@ -314,26 +327,27 @@ class PostFeedTile extends StatelessWidget {
                                 ),
                               ),
                             );
-                            return error;
-                          });
+                            return isLiked;
+                          }
                           return !isLiked;
                         }
                       : null,
                   onDownvote: enabled
                       ? (isLiked) async {
-                          mutate((upvote: false, replace: !isLiked)).catchError(
-                            (error) {
-                              messenger.showSnackBar(
-                                SnackBar(
-                                  duration: const Duration(seconds: 1),
-                                  content: Text(
-                                    'Failed to downvote Post #${post.id}',
-                                  ),
+                          if ((await mutate((
+                            upvote: false,
+                            replace: !isLiked,
+                          ))).isError) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                duration: const Duration(seconds: 1),
+                                content: Text(
+                                  'Failed to downvote Post #${post.id}',
                                 ),
-                              );
-                              return error;
-                            },
-                          );
+                              ),
+                            );
+                            return isLiked;
+                          }
                           return !isLiked;
                         }
                       : null,
@@ -390,7 +404,7 @@ class PostFeedTile extends StatelessWidget {
           child: PostImageTile(
             post: post,
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
+              DismissRoute<void>(
                 builder: (context) => ImageCacheSizeProvider(
                   size: cacheSize,
                   child: PostRouteScope(

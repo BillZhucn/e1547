@@ -23,8 +23,11 @@ class PostClient {
   final Identity identity;
 
   Future<Post> get({required int id, CancelToken? cancelToken}) => dio
-      .get('/posts/$id.json', cancelToken: cancelToken)
-      .then(unwrapRailsArray)
+      .get(
+        '/posts/$id.json',
+        queryParameters: {'mode': 'extended'},
+        cancelToken: cancelToken,
+      )
       .then((response) => E621Post.fromJson(response.data));
 
   Future<List<Post>> page({
@@ -32,18 +35,33 @@ class PostClient {
     int? limit,
     QueryMap? query,
     CancelToken? cancelToken,
+  }) => _search(
+    page: page,
+    limit: limit,
+    query: query,
+    cancelToken: cancelToken,
+  ).then(_filter);
+
+  Future<List<Post>> _search({
+    int? page,
+    int? limit,
+    QueryMap? query,
+    CancelToken? cancelToken,
   }) => dio
       .get(
         '/posts.json',
-        queryParameters: {'page': page, 'limit': limit, ...?query}.toQuery(),
+        queryParameters: {
+          'page': page,
+          'limit': limit,
+          'mode': 'extended',
+          ...?query,
+        }.toQuery(),
         cancelToken: cancelToken,
       )
-      .then(unwrapRailsArray)
       .then(
         (response) =>
             (response.data as List).map<Post>(E621Post.fromJson).toList(),
-      )
-      .then(_filter);
+      );
 
   /// Filters out "broken" posts.
   /// Flash posts are considered to be broken by default, since we will not be able to display them.
@@ -56,34 +74,47 @@ class PostClient {
 
   Future<List<Post>> byIds({
     required List<int> ids,
+    bool hidden = false,
     CancelToken? cancelToken,
   }) async {
     if (ids.isEmpty) return [];
-
-    // Server-side maximum id and page request size.
-    const int chunkSize = 320;
-
-    List<List<int>> chunks = [];
-    for (int i = 0; i < ids.length; i += chunkSize) {
-      chunks.add(ids.sublist(i, min(i + chunkSize, ids.length)));
-    }
-
-    List<Post> result = [];
-    for (final chunk in chunks) {
-      String filter = 'id:${chunk.join(',')}';
-      List<Post> part = await page(
-        query: {'tags': filter},
-        limit: chunk.length,
-        cancelToken: cancelToken,
-      );
-      Map<int, Post> table = {for (Post e in part) e.id: e};
-      result.addAll(
-        (chunk.map((e) => table[e]).toList()..removeWhere((e) => e == null))
-            .cast<Post>(),
-      );
-    }
-    return result;
+    String filter = 'id:${ids.join(',')}';
+    if (hidden) filter = '$filter status:any';
+    List<Post> found = await _search(
+      query: {'tags': filter},
+      limit: min(ids.length, maxPageLimit),
+      cancelToken: cancelToken,
+    );
+    if (!hidden) found = _filter(found);
+    Map<int, Post> table = {for (Post e in found) e.id: e};
+    return ids.map((e) => table[e]).nonNulls.toList();
   }
+
+  Future<List<PartialPost>> artistRecommendations({
+    required int id,
+    int? limit,
+    CancelToken? cancelToken,
+  }) => dio
+      .get(
+        '/posts/$id/similar/artist.json',
+        queryParameters: {'limit': limit}.toQuery(),
+        cancelToken: cancelToken,
+      )
+      .then((response) {
+        final Map<int, PartialPost> posts = {
+          for (final PartialPost post
+              in (response.data['post_data'] as List).map(
+                E621Post.partialFromJson,
+              ))
+            post.id: post,
+        };
+        return [
+          for (final Map<String, dynamic> result
+              in (response.data['results'] as List)
+                  .cast<Map<String, dynamic>>())
+            if (posts[result['post_id']] case final PartialPost post) post,
+        ];
+      });
 
   Future<List<Post>> byTags({
     required List<String> tags,
@@ -137,12 +168,12 @@ class PostClient {
         queryParameters: {
           'page': page,
           'limit': limit,
+          'mode': 'extended',
           // may not contain tags, or we get redirected to a html page
           ...?(query?..remove('tags')),
         },
         cancelToken: cancelToken,
       )
-      .then(unwrapRailsArray)
       .then(
         (response) => (response.data as List<dynamic>)
             .map<Post>(E621Post.fromJson)

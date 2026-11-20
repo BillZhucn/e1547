@@ -17,7 +17,7 @@ class ReplyLoadingPage extends StatelessWidget {
     return QueryBuilder(
       query: client.replies.useGet(id: id),
       builder: (context, state) => LoadingPage(
-        isLoading: state.isLoading,
+        isLoading: state.isLoading || state.isInitial,
         isError: state.isError,
         isEmpty: state.data == null,
         loadingBuilder: (context, child) => Scaffold(
@@ -26,6 +26,10 @@ class ReplyLoadingPage extends StatelessWidget {
             title: Text('Reply #$id'),
           ),
           body: child(context),
+        ),
+        skeleton: (context) => TopicRepliesPage(
+          topic: const TopicGhost(),
+          orderByOldest: orderByOldest,
         ),
         onError: const Text('Failed to load reply'),
         onEmpty: const Text('Reply not found'),

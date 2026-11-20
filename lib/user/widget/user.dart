@@ -1,231 +1,208 @@
+import 'package:dio/dio.dart';
 import 'package:e1547/app/app.dart';
 import 'package:e1547/client/client.dart';
 import 'package:e1547/markup/markup.dart';
 import 'package:e1547/post/post.dart';
 import 'package:e1547/query/query.dart';
 import 'package:e1547/shared/shared.dart';
-import 'package:e1547/tag/tag.dart';
 import 'package:e1547/ticket/ticket.dart';
 import 'package:e1547/traits/traits.dart';
 import 'package:e1547/user/user.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_sub/flutter_sub.dart';
-
-enum UserPageSection { favorites, uploads, info }
 
 class UserPage extends StatelessWidget {
-  const UserPage({
-    super.key,
-    required this.user,
-    this.initialPage = UserPageSection.favorites,
-  });
+  const UserPage({super.key, required this.user, this.summary});
 
   final User user;
-  final UserPageSection initialPage;
+  final UserSummary? summary;
 
   @override
   Widget build(BuildContext context) {
+    final Client client = context.watch<Client>();
+    final UserStats? stats = user.stats;
+    final PostParams uploads = PostParams(tags: 'user:${user.name}');
+    final PostParams favorites = PostParams(tags: 'fav:${user.name}');
+    void open(PostParams params) => Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => PostsPage(params: params)));
     return UserHistoryConnector(
       user: user,
-      child: SubValue.builder(
-        create: (context) => PostFilter(context.read<Client>()),
-        dispose: (_, v) => v.dispose(),
-        builder: (context, filter) => LayoutBuilder(
-          builder: (context, constraints) {
-            Widget body;
-            PreferredSizeWidget? appbar;
-            final tabs = <Widget, WidgetBuilder>{
-              const Tab(text: 'Favorites'): (context) => _UserPostsTab(
-                filter: filter,
-                params: PostParams(tags: 'fav:${user.name}'),
-              ),
-              const Tab(text: 'Uploads'): (context) => _UserPostsTab(
-                filter: filter,
-                params: PostParams(tags: 'user:${user.name}'),
-              ),
-            };
-
-            if (constraints.maxWidth < 1100) {
-              body = NestedScrollView(
+      child: FilterControllerProvider<PostFilter, Post>(
+        create: (_) => PostFilter(client),
+        keys: (_) => [client],
+        child: Scaffold(
+          drawer: const RouterDrawer(),
+          body: LimitedWidthLayout(
+            child: Builder(
+              builder: (context) => CustomScrollView(
                 controller: PrimaryScrollController.of(context),
-                headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                  SliverOverlapAbsorber(
-                    handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
-                      context,
-                    ),
-                    sliver: UserSliverAppBar(
-                      user: user,
-                      tabs: tabs.keys.toList(),
-                    ),
+                slivers: [
+                  UserSliverAppBar(
+                    user: user,
+                    summary: summary,
+                    scrollController: PrimaryScrollController.of(context),
                   ),
-                ],
-                body: LimitedWidthLayout(
-                  child: TileLayout(
-                    child: Builder(
-                      builder: (context) => TabBarView(
-                        children: tabs.values
-                            .map(
-                              (e) => CustomScrollView(
-                                slivers: [
-                                  SliverOverlapInjector(
-                                    handle:
-                                        NestedScrollView.sliverOverlapAbsorberHandleFor(
-                                          context,
-                                        ),
+                  SliverPadding(
+                    padding: defaultListPadding.add(
+                      LimitedWidthLayout.of(context).padding,
+                    ),
+                    sliver: SliverToBoxAdapter(
+                      child: SkeletonIgnore(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            UserInfo(user: user),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const SizedBox(height: 8),
+                                  UserPostRow(
+                                    title: 'Uploads',
+                                    count: stats?.postUploadCount,
+                                    params: uploads,
+                                    onAll: () => open(uploads),
                                   ),
-                                  e(context),
+                                  UserPostRow(
+                                    title: 'Favorites',
+                                    count: stats?.favoriteCount,
+                                    params: favorites,
+                                    onAll: () => open(favorites),
+                                    hidden:
+                                        '${user.name} keeps their favorites '
+                                        'private',
+                                  ),
                                 ],
                               ),
-                            )
-                            .toList(),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-              tabs[const Tab(text: 'About')] = (context) => SliverPadding(
-                padding: defaultListPadding.add(
-                  LimitedWidthLayout.of(context).padding,
-                ),
-                sliver: SliverToBoxAdapter(
-                  child: UserInfo(
-                    user: user,
-                    compact: constraints.maxWidth < 600,
-                  ),
-                ),
-              );
-            } else {
-              body = Row(
-                children: [
-                  SizedBox(
-                    width: 360,
-                    child: ListView(
-                      primary: false,
-                      padding: defaultListPadding,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                height: 100,
-                                width: 100,
-                                child: UserAvatar(
-                                  id: user.avatarId,
-                                  userId: user.id,
-                                  hasCroppedAvatar: user.hasCroppedAvatar,
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  top: 16,
-                                  bottom: 32,
-                                ),
-                                child: Text(
-                                  user.name,
-                                  style: Theme.of(context).textTheme.titleLarge,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        UserInfo(user: user, compact: false),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: LimitedWidthLayout(
-                      child: TileLayout(
-                        child: TabBarView(
-                          children: tabs.values
-                              .toList()
-                              .sublist(0, tabs.length)
-                              .map(
-                                (e) => CustomScrollView(slivers: [e(context)]),
-                              )
-                              .toList(),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
                 ],
-              );
-              appbar = DefaultAppBar(
-                ignoreTitlePointer: false,
-                title: TabBar(
-                  isScrollable: true,
-                  labelColor: Theme.of(context).iconTheme.color,
-                  indicatorColor: Theme.of(context).iconTheme.color,
-                  tabs: tabs.keys.toList().sublist(0, tabs.length).toList(),
-                ),
-                actions: [
-                  _UserProfileActions(user: user),
-                  const ContextDrawerButton(),
-                ],
-                elevation: 0,
-              );
-            }
-
-            return DefaultTabController(
-              length: tabs.length,
-              initialIndex: initialPage.index,
-              child: Scaffold(
-                appBar: appbar,
-                drawer: const RouterDrawer(),
-                endDrawer: ContextDrawer(
-                  title: const Text('Posts'),
-                  children: [
-                    DrawerDenySwitch(filter: filter),
-                    DrawerMultiTagCounter(filter: filter),
-                  ],
-                ),
-                body: body,
               ),
-            );
-          },
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _UserPostsTab extends StatelessWidget {
-  const _UserPostsTab({required this.filter, required this.params});
+class UserPostRow extends StatelessWidget {
+  const UserPostRow({
+    super.key,
+    required this.title,
+    required this.count,
+    required this.params,
+    required this.onAll,
+    this.hidden,
+  });
 
-  final PostFilter filter;
+  final String title;
+  final int? count;
   final PostParams params;
+  final VoidCallback onAll;
+  final String? hidden;
 
   @override
   Widget build(BuildContext context) {
-    return FilterControllerProvider<PostFilter, Post>.value(
-      value: filter,
-      child: ChangeNotifierProvider(
-        create: (_) => PostParamsController(initial: params, canSearch: false),
-        child: SliverMainAxisGroup(
-          slivers: [
-            SliverPadding(
-              padding: defaultActionListPadding,
-              sliver: const SliverPostList(),
-            ),
-          ],
-        ),
+    if (count == 0) return const SizedBox.shrink();
+    if (isSkeleton(context)) {
+      return PostRowSection.loading(title: title, onAll: onAll);
+    }
+    final Client client = context.watch<Client>();
+    return PagedQueryBuilder(
+      query: client.posts.usePage(query: params.toQuery()),
+      getItem: (id) => client.posts.useGet(id: id, vendored: true),
+      builder: (context, state) => QueryFilter(
+        state: state,
+        builder: (context, state) {
+          final List<Post>? posts = state.data?.pages.firstOrNull;
+          if (posts == null) {
+            if ((hidden, state.error) case (
+              final String hidden,
+              DioException(response: Response(statusCode: 403)),
+            )) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  RelationHeader(title: title),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      spacing: 12,
+                      children: [
+                        Icon(
+                          Icons.lock,
+                          size: 18,
+                          color: dimTextColor(context),
+                        ),
+                        Expanded(
+                          child: Text(
+                            hidden,
+                            style: TextStyle(color: dimTextColor(context)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(),
+                ],
+              );
+            }
+            if (state.error != null) return const SizedBox.shrink();
+            return PostRowSection.loading(title: title, onAll: onAll);
+          }
+          if (posts.isEmpty) return const SizedBox.shrink();
+          return PostRowSection(
+            title: title,
+            count: count,
+            onAll: onAll,
+            children: [
+              for (final Post post in posts)
+                PostRowTile(
+                  post: post,
+                  onTap: () => pushPostGallery(
+                    context,
+                    params: params,
+                    initialPostId: post.id,
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
 class UserSliverAppBar extends StatelessWidget {
-  const UserSliverAppBar({super.key, required this.user, this.tabs});
+  const UserSliverAppBar({
+    super.key,
+    required this.user,
+    this.summary,
+    this.scrollController,
+  });
 
   final User user;
-  final List<Widget>? tabs;
+  final UserSummary? summary;
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
+    final UserSummary header = summary ?? user;
+    final bool known = header is! Ghost;
     return DefaultSliverAppBar(
+      scrollController: scrollController,
       pinned: true,
       expandedHeight: 250,
       flexibleSpace: Builder(
@@ -245,39 +222,41 @@ class UserSliverAppBar extends StatelessWidget {
             collapseMode: CollapseMode.pin,
             title: Opacity(
               opacity: 1 - (extension * 6).clamp(0, 1),
-              child: Text(user.name),
+              child: Skeleton.keep(keep: known, child: Text(header.name)),
             ),
-            background: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  height: 100,
-                  width: 100,
-                  child: UserAvatar(
-                    id: user.avatarId,
-                    userId: user.id,
-                    hasCroppedAvatar: user.hasCroppedAvatar,
+            background: SafeArea(
+              bottom: false,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    height: 100,
+                    width: 100,
+                    child: Skeleton.keep(
+                      keep: known,
+                      child: UserAvatar(
+                        id: header.avatarId,
+                        userId: header.id,
+                        hasCroppedAvatar: header.hasCroppedAvatar,
+                      ),
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 16, bottom: 32),
-                  child: Text(
-                    user.name,
-                    style: Theme.of(context).textTheme.titleLarge,
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Skeleton.keep(
+                      keep: known,
+                      child: Text(
+                        header.name,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
       ),
-      bottom: tabs != null
-          ? TabBar(
-              labelColor: Theme.of(context).iconTheme.color,
-              indicatorColor: Theme.of(context).iconTheme.color,
-              tabs: tabs!,
-            )
-          : null,
       actions: [_UserProfileActions(user: user)],
     );
   }
@@ -338,10 +317,9 @@ class _UserProfileActions extends StatelessWidget {
 }
 
 class UserInfo extends StatelessWidget {
-  const UserInfo({super.key, required this.user, this.compact = true});
+  const UserInfo({super.key, required this.user});
 
   final User user;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -357,7 +335,6 @@ class UserInfo extends StatelessWidget {
         title: title,
         value: value.toString(),
         onLongPress: onLongPress,
-        compact: compact,
       );
     }
 
@@ -381,7 +358,7 @@ class UserInfo extends StatelessWidget {
                       horizontal: 16,
                       vertical: 8,
                     ),
-                    child: DText(bio),
+                    child: DTextFold(text: bio),
                   ),
                 ),
               ),
@@ -400,13 +377,13 @@ class UserInfo extends StatelessWidget {
                       horizontal: 16,
                       vertical: 8,
                     ),
-                    child: DText(comission),
+                    child: DTextFold(text: comission),
                   ),
                 ),
               ),
             Card(
               child: ExpandablePanel(
-                controller: Expandables.of(context, 'info'),
+                controller: Expandables.of(context, 'info', expanded: false),
                 header: const ListTile(
                   leading: Icon(Icons.info_outline),
                   title: Text('Info'),
@@ -450,6 +427,57 @@ class UserInfo extends StatelessWidget {
                         info(Icons.favorite, 'favorites', stats.favoriteCount),
                         info(Icons.comment, 'comments', stats.commentCount),
                         info(Icons.forum, 'forum', stats.forumPostCount),
+                        if (stats.poolUpdateCount case final count?
+                            when count != 0)
+                          info(Icons.collections, 'pool edits', count),
+                        if (stats.artistUpdateCount case final count?
+                            when count != 0)
+                          info(Icons.brush, 'artist edits', count),
+                        if (stats.wikiUpdateCount case final count?
+                            when count != 0)
+                          info(Icons.menu_book, 'wiki edits', count),
+                        if (stats.noteUpdateCount case final count?
+                            when count != 0)
+                          info(Icons.sticky_note_2, 'note edits', count),
+                        info(
+                          Icons.trending_up,
+                          'upload karma',
+                          stats.uploadKarma,
+                        ),
+                        info(
+                          Icons.hourglass_empty,
+                          'upload slots',
+                          stats.canUploadFree ? null : stats.uploadSlots,
+                        ),
+                        if ((
+                              stats.positiveFeedbackCount ?? 0,
+                              stats.neutralFeedbackCount ?? 0,
+                              stats.negativeFeedbackCount ?? 0,
+                            )
+                            case (final positive, final neutral, final negative)
+                            when positive + neutral + negative > 0)
+                          info(
+                            Icons.thumbs_up_down,
+                            'feedback',
+                            '$positive positive, $neutral neutral, '
+                                '$negative negative',
+                          ),
+                        if ([
+                              if (stats.canApprovePosts) 'approve posts',
+                              if (stats.canUploadFree) 'unrestricted uploads',
+                            ]
+                            case final permissions when permissions.isNotEmpty)
+                          info(
+                            Icons.verified_user,
+                            'permissions',
+                            permissions.join(', '),
+                          ),
+                        if ([
+                              if (stats.isBanned) 'banned',
+                              if (!stats.isVerified) 'unactivated',
+                            ]
+                            case final status when status.isNotEmpty)
+                          info(Icons.gavel, 'status', status.join(', ')),
                       ],
                     ],
                   ),
@@ -470,14 +498,12 @@ class UserInfoTile extends StatelessWidget {
     required this.title,
     required this.icon,
     this.onLongPress,
-    this.compact = true,
   });
 
   final String value;
   final String title;
   final IconData icon;
   final VoidCallback? onLongPress;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -495,21 +521,13 @@ class UserInfoTile extends StatelessWidget {
             Icon(icon),
             const SizedBox(width: 16),
             Expanded(
-              child: compact
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title, style: titleStyle),
-                        Text(value, style: valueStyle),
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        Expanded(child: Text(title, style: valueStyle)),
-                        const SizedBox(height: 4),
-                        Text(value, style: valueStyle),
-                      ],
-                    ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: titleStyle),
+                  Text(value, style: valueStyle),
+                ],
+              ),
             ),
           ],
         ),

@@ -2,13 +2,20 @@ import 'dart:math';
 
 import 'package:e1547/client/client.dart';
 import 'package:e1547/post/post.dart';
+import 'package:e1547/settings/settings.dart';
 import 'package:e1547/shared/shared.dart';
 import 'package:flutter/material.dart';
 
 class PostDetail extends StatelessWidget {
-  const PostDetail({super.key, required this.post, this.onTapImage});
+  const PostDetail({
+    super.key,
+    required this.post,
+    this.summary,
+    this.onTapImage,
+  });
 
   final Post post;
+  final PostSummary? summary;
   final VoidCallback? onTapImage;
 
   Widget image(BuildContext context, Size size) => Padding(
@@ -22,21 +29,42 @@ class PostDetail extends StatelessWidget {
       ),
       child: AnimatedSize(
         duration: defaultAnimationDuration,
-        child: PostDetailImageDisplay(
-          post: post,
-          onTap: () {
-            PostVideoRoute.of(context).keepPlaying();
-            if (onTapImage != null) {
-              onTapImage!();
-            } else {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => PostFullscreen(post: post),
+        child: switch (summary) {
+          final PostSummary summary => Skeleton.keep(
+            child: Center(
+              child: ContentHero(
+                tag: PostLinking.getPostLink(summary.id),
+                content: FittedContent(
+                  fit: BoxFit.contain,
+                  aspectRatio: summary.width / summary.height,
                 ),
-              );
-            }
-          },
-        ),
+                child: PostImageWidget(
+                  post: summary,
+                  size: PostImageSize.sample,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+          ),
+          null => Skeleton.keep(
+            keep: post is! Ghost,
+            child: PostDetailImageDisplay(
+              post: post,
+              onTap: () {
+                PostVideoRoute.of(context).keepPlaying();
+                if (onTapImage != null) {
+                  onTapImage!();
+                } else {
+                  Navigator.of(context).push(
+                    DismissRoute<void>(
+                      builder: (context) => PostFullscreen(post: post),
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+        },
       ),
     ),
   );
@@ -65,6 +93,7 @@ class PostDetail extends StatelessWidget {
       children: [
         RelationshipDisplay(post: post),
         PoolDisplay(post: post),
+        ArtistRecommendations(post: post),
         DenylistTagDisplay(post: post),
         TagDisplay(post: post),
         FileDisplay(post: post),
@@ -79,75 +108,110 @@ class PostDetail extends StatelessWidget {
       post: post,
       child: PostHistoryConnector(
         post: post,
-        child: Scaffold(
-          extendBodyBehindAppBar: true,
-          appBar: PostDetailAppBar(post: post),
-          floatingActionButton: context.read<Client>().hasLogin
-              ? PostDetailFab(post: post)
-              : null,
-          body: MediaQuery.removeViewInsets(
-            context: context,
-            removeTop: true,
-            child: Builder(
-              builder: (context) {
-                final size = MediaQuery.sizeOf(context);
-                if (size.width < 1000) {
-                  return ListView(
-                    primary: true,
-                    padding: EdgeInsets.only(
-                      top: MediaQuery.of(context).padding.top,
-                      bottom: kBottomNavigationBarHeight + 24,
+        child: ScrollToDismiss(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            extendBodyBehindAppBar: true,
+            appBar: PostDetailAppBar(post: post),
+            floatingActionButtonLocation: Handedness.of(
+              context,
+            ).floatingActionButtonLocation,
+            floatingActionButton:
+                context.read<Client>().hasLogin && !isSkeleton(context)
+                ? DismissFade(child: PostDetailFab(post: post))
+                : null,
+            body: MediaQuery.removeViewInsets(
+              context: context,
+              removeTop: true,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  DismissFade(
+                    child: Skeleton.keep(
+                      child: ColoredBox(
+                        color: Theme.of(context).scaffoldBackgroundColor,
+                      ),
                     ),
-                    children: [
-                      image(context, size),
-                      upperBody(context),
-                      middleBody(context),
-                      lowerBody(context),
-                    ],
-                  );
-                } else {
-                  double sideBarWidth;
-                  if (size.width > 1400) {
-                    sideBarWidth = 404;
-                  } else {
-                    sideBarWidth = 304;
-                  }
-                  return CustomScrollView(
-                    primary: true,
-                    slivers: [
-                      SliverCrossAxisGroup(
-                        slivers: [
-                          SliverMainAxisGroup(
-                            slivers: [
-                              SliverToBoxAdapter(
-                                child: Column(
-                                  children: [
-                                    image(context, size),
-                                    upperBody(context),
-                                  ],
-                                ),
-                              ),
-                              SliverPostCommentSection(postId: post.id),
-                            ],
+                  ),
+                  Builder(
+                    builder: (context) {
+                      final size = MediaQuery.sizeOf(context);
+                      if (size.width < 1000) {
+                        return ListView(
+                          primary: true,
+                          padding: EdgeInsets.only(
+                            top: MediaQuery.of(context).padding.top,
+                            bottom: kBottomNavigationBarHeight + 24,
                           ),
-                          SliverConstrainedCrossAxis(
-                            maxExtent: sideBarWidth,
-                            sliver: SliverToBoxAdapter(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const SizedBox(height: 56),
-                                  lowerBody(context),
+                          children: [
+                            SkeletonIgnore(child: image(context, size)),
+                            SkeletonIgnore(
+                              child: DismissFade(child: upperBody(context)),
+                            ),
+                            SkeletonIgnore(
+                              child: DismissFade(child: middleBody(context)),
+                            ),
+                            SkeletonIgnore(
+                              child: DismissFade(child: lowerBody(context)),
+                            ),
+                          ],
+                        );
+                      } else {
+                        double sideBarWidth;
+                        if (size.width > 1400) {
+                          sideBarWidth = 404;
+                        } else {
+                          sideBarWidth = 304;
+                        }
+                        return CustomScrollView(
+                          primary: true,
+                          slivers: [
+                            SliverSkeletonIgnore(
+                              sliver: SliverCrossAxisGroup(
+                                slivers: [
+                                  SliverMainAxisGroup(
+                                    slivers: [
+                                      SliverToBoxAdapter(
+                                        child: Column(
+                                          children: [
+                                            image(context, size),
+                                            DismissFade(
+                                              child: upperBody(context),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      DismissSliverFade(
+                                        sliver: SliverPostCommentSection(
+                                          postId: post.id,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  SliverConstrainedCrossAxis(
+                                    maxExtent: sideBarWidth,
+                                    sliver: SliverToBoxAdapter(
+                                      child: DismissFade(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const SizedBox(height: 56),
+                                            lowerBody(context),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  );
-                }
-              },
+                          ],
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         ),

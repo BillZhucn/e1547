@@ -21,7 +21,7 @@ class WikiLoadingPage extends StatelessWidget {
           ? wikis.useGet(id: id)
           : wikis.useGetByTitle(title: title!),
       builder: (context, state) => LoadingPage(
-        isLoading: state.isLoading,
+        isLoading: state.isLoading || state.isInitial,
         isError: state.isError,
         isEmpty: state.data == null,
         loadingBuilder: (context, child) => Scaffold(
@@ -31,6 +31,7 @@ class WikiLoadingPage extends StatelessWidget {
           ),
           body: child(context),
         ),
+        skeleton: (context) => const WikiPage(wiki: WikiGhost()),
         onError: const Text('Failed to load wiki'),
         onEmpty: const Text('Wiki not found'),
         child: (context) => WikiPage(wiki: state.data!),

@@ -1,6 +1,7 @@
 import 'package:e1547/post/post.dart';
 import 'package:e1547/query/query.dart';
 import 'package:e1547/shared/shared.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class PostList extends StatelessWidget {
@@ -10,8 +11,17 @@ class PostList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => PostPageQueryBuilder(
-    builder: (context, state, query) => PullToRefresh(
-      onRefresh: query.invalidate,
+    builder: (context, state, query) => PullToRefresh.noted(
+      onRefresh: () async {
+        final List<int>? before = query.state.data?.pages.firstOrNull;
+        await query.invalidate();
+        if (query.state.isError) return const RefreshNote('Failed to refresh');
+        if (before != null &&
+            listEquals(before, query.state.data?.pages.firstOrNull)) {
+          return const RefreshNote('Up to date');
+        }
+        return null;
+      },
       child: CustomScrollView(
         primary: true,
         slivers: [
@@ -69,6 +79,7 @@ class PostGridSliver extends StatelessWidget {
       onRetry: fetchNextPage,
       onEmpty: const Text('No posts'),
       onError: const Text('Failed to load posts'),
+      onEnd: const Text('No more posts'),
       itemBuilder: itemBuilder,
     );
 
@@ -77,34 +88,40 @@ class PostGridSliver extends StatelessWidget {
       child: PostTile(post: item),
     );
 
-    return switch (TileLayout.of(context).stagger) {
-      GridQuilt.square => PagedSliverGrid<int, Post>(
-        showNewPageErrorIndicatorAsGridChild: false,
-        showNewPageProgressIndicatorAsGridChild: false,
-        showNoMoreItemsIndicatorAsGridChild: false,
-        state: state,
-        fetchNextPage: fetchNextPage,
-        builderDelegate: buildBuilderDelegate(itemBuilder),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: TileLayout.of(context).crossAxisCount,
-          childAspectRatio: 1 / TileLayout.of(context).tileHeightFactor,
-        ),
-      ),
-      GridQuilt.vertical => PagedSliverMasonryGrid<int, Post>.count(
-        showNewPageErrorIndicatorAsGridChild: false,
-        showNewPageProgressIndicatorAsGridChild: false,
-        showNoMoreItemsIndicatorAsGridChild: false,
-        state: state,
-        fetchNextPage: fetchNextPage,
-        builderDelegate: buildBuilderDelegate(
-          (context, item, index) => AspectRatio(
-            aspectRatio: 1 / (item.height / item.width),
-            child: itemBuilder(context, item, index),
-          ),
-        ),
-        crossAxisCount: TileLayout.of(context).crossAxisCount,
-      ),
-    };
+    return SliverSkeletonPaging<Post>(
+      state: state,
+      fetchNextPage: fetchNextPage,
+      ghost: PostGhost.new,
+      builder: (context, state, fetchNextPage) =>
+          switch (TileLayout.of(context).stagger) {
+            GridQuilt.square => PagedSliverGrid<int, Post>(
+              showNewPageErrorIndicatorAsGridChild: false,
+              showNewPageProgressIndicatorAsGridChild: false,
+              showNoMoreItemsIndicatorAsGridChild: false,
+              state: state,
+              fetchNextPage: fetchNextPage,
+              builderDelegate: buildBuilderDelegate(itemBuilder),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: TileLayout.of(context).crossAxisCount,
+                childAspectRatio: 1 / TileLayout.of(context).tileHeightFactor,
+              ),
+            ),
+            GridQuilt.vertical => PagedSliverMasonryGrid<int, Post>.count(
+              showNewPageErrorIndicatorAsGridChild: false,
+              showNewPageProgressIndicatorAsGridChild: false,
+              showNoMoreItemsIndicatorAsGridChild: false,
+              state: state,
+              fetchNextPage: fetchNextPage,
+              builderDelegate: buildBuilderDelegate(
+                (context, item, index) => AspectRatio(
+                  aspectRatio: 1 / (item.height / item.width),
+                  child: itemBuilder(context, item, index),
+                ),
+              ),
+              crossAxisCount: TileLayout.of(context).crossAxisCount,
+            ),
+          },
+    );
   }
 }
 
@@ -120,19 +137,25 @@ class PostComicSliver extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PagedSliverList(
+    return SliverSkeletonPaging<Post>(
       state: state,
       fetchNextPage: fetchNextPage,
-      builderDelegate: defaultPagedChildBuilderDelegate<Post>(
-        onRetry: fetchNextPage,
-        onEmpty: const Text('No posts'),
-        onError: const Text('Failed to load posts'),
-        itemBuilder: (context, item, index) => Padding(
-          padding:
-              LimitedWidthLayout.maybeOf(context)?.padding ?? EdgeInsets.zero,
-          child: ImageCacheSizeProvider(
-            size: 800,
-            child: PostComicTile(post: item),
+      ghost: PostGhost.new,
+      builder: (context, state, fetchNextPage) => PagedSliverList(
+        state: state,
+        fetchNextPage: fetchNextPage,
+        builderDelegate: defaultPagedChildBuilderDelegate<Post>(
+          onRetry: fetchNextPage,
+          onEmpty: const Text('No posts'),
+          onError: const Text('Failed to load posts'),
+          onEnd: const Text('No more posts'),
+          itemBuilder: (context, item, index) => Padding(
+            padding:
+                LimitedWidthLayout.maybeOf(context)?.padding ?? EdgeInsets.zero,
+            child: ImageCacheSizeProvider(
+              size: 800,
+              child: PostComicTile(post: item),
+            ),
           ),
         ),
       ),
@@ -152,19 +175,25 @@ class PostTimelineSliver extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PagedSliverList(
+    return SliverSkeletonPaging<Post>(
       state: state,
       fetchNextPage: fetchNextPage,
-      builderDelegate: defaultPagedChildBuilderDelegate<Post>(
-        onRetry: fetchNextPage,
-        onEmpty: const Text('No posts'),
-        onError: const Text('Failed to load posts'),
-        itemBuilder: (context, item, index) => Padding(
-          padding:
-              LimitedWidthLayout.maybeOf(context)?.padding ?? EdgeInsets.zero,
-          child: ImageCacheSizeProvider(
-            size: 800,
-            child: PostFeedTile(post: item),
+      ghost: PostGhost.new,
+      builder: (context, state, fetchNextPage) => PagedSliverList(
+        state: state,
+        fetchNextPage: fetchNextPage,
+        builderDelegate: defaultPagedChildBuilderDelegate<Post>(
+          onRetry: fetchNextPage,
+          onEmpty: const Text('No posts'),
+          onError: const Text('Failed to load posts'),
+          onEnd: const Text('No more posts'),
+          itemBuilder: (context, item, index) => Padding(
+            padding:
+                LimitedWidthLayout.maybeOf(context)?.padding ?? EdgeInsets.zero,
+            child: ImageCacheSizeProvider(
+              size: 800,
+              child: PostFeedTile(post: item),
+            ),
           ),
         ),
       ),

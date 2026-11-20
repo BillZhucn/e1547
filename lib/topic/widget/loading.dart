@@ -17,7 +17,7 @@ class TopicLoadingPage extends StatelessWidget {
     return QueryBuilder(
       query: client.topics.useGet(id: id),
       builder: (context, state) => LoadingPage(
-        isLoading: state.isLoading,
+        isLoading: state.isLoading || state.isInitial,
         isError: state.isError,
         isEmpty: state.data == null,
         loadingBuilder: (context, child) => Scaffold(
@@ -26,6 +26,10 @@ class TopicLoadingPage extends StatelessWidget {
             title: Text('Topic #$id'),
           ),
           body: child(context),
+        ),
+        skeleton: (context) => TopicRepliesPage(
+          topic: const TopicGhost(),
+          orderByOldest: orderByOldest,
         ),
         onError: const Text('Failed to load topic'),
         onEmpty: const Text('Topic not found'),

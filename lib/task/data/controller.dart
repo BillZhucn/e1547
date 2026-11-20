@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:e1547/client/client.dart';
 import 'package:e1547/logs/logs.dart';
+import 'package:e1547/post/post.dart';
+import 'package:e1547/query/query.dart';
 import 'package:e1547/settings/settings.dart';
 import 'package:e1547/shared/shared.dart';
 import 'package:e1547/task/task.dart';
@@ -42,19 +44,21 @@ class TasksController extends ChangeNotifier {
   final Set<int> _runningIds = {};
   bool isRunning(int taskId) => _runningIds.contains(taskId);
 
+  final Set<int> _canceledIds = {};
+
   /// Sum of in-flight progress across all running tasks (0..n), driving the
   /// aggregate bubble progress.
   final ValueNotifier<double> currentProgress = ValueNotifier(0);
 
   /// Per-task download progress, so each running tile updates on its own
   /// without rebuilding the others.
-  final Map<int, ValueNotifier<double>> _progress = {};
-  ValueListenable<double>? progressOf(int taskId) => _progress[taskId];
+  final Map<int, ValueNotifier<double?>> _progress = {};
+  ValueListenable<double?>? progressOf(int taskId) => _progress[taskId];
 
   StreamSubscription<List<Task>>? _activeSub;
   Timer? _hideTimer;
   bool _seeded = false;
-  bool _drainingDownloads = false;
+  int _downloadWorkers = 0;
   bool _drainingApi = false;
   bool _disposed = false;
 
@@ -87,7 +91,7 @@ class TasksController extends ChangeNotifier {
   void _recomputeProgress() {
     double inFlight = 0;
     for (final notifier in _progress.values) {
-      inFlight += notifier.value;
+      inFlight += notifier.value ?? 1;
     }
     currentProgress.value = inFlight;
   }
@@ -174,19 +178,14 @@ class TasksController extends ChangeNotifier {
   }
 
   void _kick() {
-    unawaited(_drainDownloads());
+    _drainDownloads();
     unawaited(_drainApi());
   }
 
-  Future<void> _drainDownloads() async {
-    if (_drainingDownloads || _disposed) return;
-    _drainingDownloads = true;
-    try {
-      await Future.wait([
-        for (int i = 0; i < _maxConcurrentDownloads; i++) _downloadWorker(),
-      ]);
-    } finally {
-      _drainingDownloads = false;
+  void _drainDownloads() {
+    while (!_disposed && _downloadWorkers < _maxConcurrentDownloads) {
+      _downloadWorkers++;
+      unawaited(_downloadWorker().whenComplete(() => _downloadWorkers--));
     }
   }
 
@@ -220,10 +219,11 @@ class TasksController extends ChangeNotifier {
 
   Future<void> _process(Task task) async {
     _runningIds.add(task.id);
-    _progress[task.id] = ValueNotifier<double>(0);
+    _progress[task.id] = ValueNotifier<double?>(0);
     notifyListeners();
     try {
       await _runOne(task);
+      if (_disposed) return;
       final TaskStatus? current = await repository.readStatus(task.id);
       if (current == TaskStatus.running) {
         await repository.markCompleted(task.id);
@@ -235,16 +235,20 @@ class TasksController extends ChangeNotifier {
         e,
         s,
       );
+      if (_disposed) return;
       final TaskStatus? current = await repository.readStatus(task.id);
       if (current == TaskStatus.running) {
         await repository.markFailed(task.id, e.toString());
       }
     } finally {
-      _runningDone++;
       _runningIds.remove(task.id);
-      _progress.remove(task.id)?.dispose();
-      _recomputeProgress();
-      notifyListeners();
+      _canceledIds.remove(task.id);
+      if (!_disposed) {
+        _runningDone++;
+        _progress.remove(task.id)?.dispose();
+        _recomputeProgress();
+        notifyListeners();
+      }
     }
   }
 
@@ -253,26 +257,30 @@ class TasksController extends ChangeNotifier {
       case TaskAction.download:
         await _runDownload(task);
       case TaskAction.favorite:
-        await client.posts.addFavorite(task.postId);
+        if (await client.posts.useAddFavorite().mutate(task.postId)
+            case MutationError(:final error, :final stackTrace)) {
+          Error.throwWithStackTrace(error, stackTrace);
+        }
         if (settings.upvoteFavs.value) {
-          try {
-            await client.posts.vote(
-              id: task.postId,
-              upvote: true,
-              replace: true,
-            );
-          } on Object catch (e, s) {
-            // upvote is best-effort once the favorite succeeded
+          // upvote is best-effort once the favorite succeeded
+          if (await client.posts.useVote(id: task.postId).mutate((
+                upvote: true,
+                replace: true,
+              ))
+              case MutationError(:final error, :final stackTrace)) {
             _logger.warn(
               'Upvote after favorite failed for post {post}',
               {'post': task.postId},
-              e,
-              s,
+              error,
+              stackTrace,
             );
           }
         }
       case TaskAction.unfavorite:
-        await client.posts.removeFavorite(task.postId);
+        if (await client.posts.useRemoveFavorite().mutate(task.postId)
+            case MutationError(:final error, :final stackTrace)) {
+          Error.throwWithStackTrace(error, stackTrace);
+        }
     }
   }
 
@@ -284,15 +292,22 @@ class TasksController extends ChangeNotifier {
         'Download task missing file metadata (post #${task.postId})',
       );
     }
-    final ValueNotifier<double>? progress = _progress[task.id];
+    final ValueNotifier<double?>? progress = _progress[task.id];
     await for (final response in cacheManager.getFileStream(
       url,
       withProgress: true,
     )) {
+      if (_canceledIds.contains(task.id)) return;
       if (response is DownloadProgress) {
         progress?.value = (response.progress ?? 0).clamp(0, 1);
         _recomputeProgress();
       } else if (response is FileInfo) {
+        if (await repository.readStatus(task.id) != TaskStatus.running ||
+            _canceledIds.contains(task.id)) {
+          return;
+        }
+        progress?.value = null;
+        _recomputeProgress();
         try {
           await FileDownloader.downloadImage(
             file: response.file,
@@ -312,7 +327,10 @@ class TasksController extends ChangeNotifier {
     throw FileDownloadException('Download stream ended without file');
   }
 
-  Future<void> cancel(int taskId) => repository.markCanceled(taskId);
+  Future<void> cancel(int taskId) {
+    if (isRunning(taskId)) _canceledIds.add(taskId);
+    return repository.markCanceled(taskId);
+  }
 
   Future<void> dismiss(int taskId) => repository.remove(taskId);
 
@@ -330,7 +348,10 @@ class TasksController extends ChangeNotifier {
 
   /// Cancels every queued and in-progress task. Canceled tasks stay in the
   /// list and can be retried.
-  Future<void> cancelAll() => repository.cancelAll(identity: identity);
+  Future<void> cancelAll() {
+    _canceledIds.addAll(_runningIds);
+    return repository.cancelAll(identity: identity);
+  }
 
   /// Removes completed and canceled tasks. Failed tasks are kept so they stay
   /// visible for retry.
@@ -342,6 +363,7 @@ class TasksController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _canceledIds.addAll(_runningIds);
     _activeSub?.cancel();
     _hideTimer?.cancel();
     for (final notifier in _progress.values) {

@@ -1,11 +1,11 @@
 name: e1547
 description: A sophisticated e621 browser
-version: 21.0.1+103
+version: 21.2.0+108
 publish_to: none
 
 environment:
   sdk: ">=3.11.0 <4.0.0"
-  flutter: ">=3.44.9 <4.0.0"
+  flutter: ">=3.47.4 <4.0.0"
 
 dependencies:
   flutter:
@@ -26,7 +26,6 @@ dependencies:
   media_kit_libs_video: ^1.0.0
   flutter_cache_manager: ^3.4.2
   flutter_custom_tabs: ^2.0.0+1
-  flutter_screen_lock: ^9.2.2+2
   flutter_sub: ^3.0.0
   flutter_sub_provider: ^3.0.0
   flutter_staggered_grid_view: ^0.7.0
@@ -37,15 +36,13 @@ dependencies:
   keyboard_dismisser: ^3.0.0
   like_button: ^2.0.4
   local_auth: ^3.0.1
+  local_auth_android: ^2.0.8
   overflow_view: ^0.5.0
-  photo_view: ^0.15.0
   provider: ^6.1.2
   pull_to_refresh: ^2.0.0
   secure_app_switcher: ^1.0.0
-  sliding_sheet:
-    git:
-      url: https://github.com/clragon/sliding_sheet.git
-      ref: 0.6.0
+  smooth_sheets: ^1.3.0
+  skeletonizer: ^3.0.0
   webview_flutter: ^4.13.0
 
   # data
@@ -60,23 +57,19 @@ dependencies:
   # Pinned below 3.0.0: its native-assets hook fails to cross-compile for Android.
   cupertino_http: ^2.3.0
   drift: ^2.28.1
-  external_path: ^2.0.1
   filesize: ^2.0.1
   file_picker: ^10.2.4
   flutter_local_notifications: ^22.0.1
   freezed_annotation: ^3.0.0
-  html_character_entities: ^1.0.0+1
   image_gallery_saver_plus: ^4.0.1
   json_annotation: ^4.9.0
   logging: ^1.2.0
   mime: ^2.0.0
-  mutex: ^3.0.1
   notified_preferences: ^2.0.0
   package_info_plus: ^9.0.0
   path: ^1.9.0
   path_provider: ^2.1.0
   path_to_regexp: ^0.4.0
-  permission_handler: ^12.0.1
   petitparser: ^7.0.2
   pub_semver: ^2.1.5
   recase: ^4.1.0
@@ -87,7 +80,6 @@ dependencies:
   stack_trace: ^1.12.0
   store_checker: ^1.3.0
   url_launcher: ^6.3.2
-  wakelock_plus: ^1.2.10
   webview_cookie_manager_plus: ^2.0.16
   window_manager: ^0.5.1
   workmanager: ^0.9.0+2
@@ -102,6 +94,10 @@ dev_dependencies:
   # test/_support/fake_e621.dart
   shelf: ^1.4.2
   shelf_router: ^1.1.4
+  # test/app/widget/lock_test.dart
+  local_auth_platform_interface: ^1.1.0
+  # test/_support/images.dart
+  file: ^7.0.1
   # flutter pub run build_runner build
   # do not upgrade to 2.13. infinite loop: dart-lang/sdk#62593
   build_runner: 2.12.2
@@ -131,6 +127,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/app/
+    - assets/icon/favicons/
     - assets/static/
   fonts:
     - family: JetBrains Mono

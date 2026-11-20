@@ -6,6 +6,8 @@ import 'package:e1547/query/query.dart';
 import 'package:e1547/shared/shared.dart';
 import 'package:e1547/tag/tag.dart';
 
+final Expando<QueryLoader<int, Post>> _postLoaders = Expando();
+
 extension PostQuerying on PostClient {
   static const queryDomain = 'posts';
 
@@ -16,12 +18,39 @@ extension PostQuerying on PostClient {
   QueryBridge<Post, int> get postCache =>
       queryCache.bridge(queryKey, fromJson: Post.fromJson);
 
+  QueryBridge<PartialPost, int> get partialPostCache => queryCache.bridge([
+    ...queryKey,
+    'partial',
+  ], fromJson: PartialPost.fromJson);
+
+  QueryLoader<int, Post> get postLoader => _postLoaders[this] ??= postCache
+      .loader((ids) => byIds(ids: ids, hidden: true), limit: maxPageLimit);
+
   Query<Post> useGet({required int id, bool? vendored}) => Query(
     cache: queryCache,
     key: [...queryKey, id],
-    queryFn: () => get(id: id),
+    queryFn: () => postLoader.require(id),
     config: postCache.getConfig(vendored: vendored),
   );
+
+  Query<List<PartialPost>> useArtistRecommendations({required int id}) => Query(
+    cache: queryCache,
+    key: [...queryKey, 'recommendations', 'artist', id],
+    queryFn: () async {
+      final List<PartialPost> posts = await artistRecommendations(id: id);
+      partialPostCache.savePage(posts);
+      return posts;
+    },
+  );
+
+  InfiniteQuery<List<int>, int> usePageOfIds({required List<int> ids}) =>
+      InfiniteQuery<List<int>, int>(
+        cache: queryCache,
+        key: [...queryKey, 'page_of_ids', ids.join(',')],
+        getNextArg: (state) => state == null || state.args.isEmpty ? 1 : null,
+        config: pagedIdConfig(),
+        queryFn: (_) => byIds(ids: ids).then(postCache.savePage),
+      );
 
   InfiniteQuery<List<int>, int> usePage({required QueryMap? query}) {
     final normalized = _normalize(query);
@@ -32,6 +61,14 @@ extension PostQuerying on PostClient {
     if (tags.length == 2 && order == 'pool') {
       final poolId = int.tryParse(tags['pool'] ?? '');
       if (poolId != null) return useByPool(id: poolId);
+    }
+    if (tags['id'] case final id? when tags.length == 1 && id.contains(',')) {
+      final List<int?> ids = id.split(',').map(int.tryParse).toList();
+      if (!ids.contains(null)) return usePageOfIds(ids: ids.nonNulls.toList());
+    }
+    if (tags.length == 2 && order == 'id') {
+      final parentId = int.tryParse(tags['parent'] ?? '');
+      if (parentId != null) return useByParent(id: parentId);
     }
     if (tags.length == 2 &&
         order == 'fav' &&
@@ -99,6 +136,27 @@ extension PostQuerying on PostClient {
         },
       );
 
+  InfiniteQuery<List<int>, int> useByParent({required int id}) {
+    final QueryMap query = {'tags': 'parent:$id order:id'};
+    final List<int> children =
+        postCache.get(id)?.relationships.children ?? const [];
+    return InfiniteQuery<List<int>, int>(
+      cache: queryCache,
+      key: [...queryKey, query],
+      getNextArg: (state) {
+        if (state == null || state.args.isEmpty) return 1;
+        if (children.isNotEmpty && children.length <= maxPageLimit) {
+          return null;
+        }
+        return state.nextPage;
+      },
+      config: pagedIdConfig(),
+      queryFn: (page) => this
+          .page(page: page, limit: maxPageLimit, query: query)
+          .then(postCache.savePage),
+    );
+  }
+
   InfiniteQuery<List<int>, int> useByTags({required List<String> tags}) =>
       InfiniteQuery<List<int>, int>(
         cache: queryCache,
@@ -112,7 +170,7 @@ extension PostQuerying on PostClient {
   Query<List<Post>> useByIds({required List<int> ids}) => Query(
     cache: queryCache,
     key: [...queryKey, 'ids', ids],
-    queryFn: () => byIds(ids: ids).then((fetched) {
+    queryFn: () => byIds(ids: ids, hidden: true).then((fetched) {
       postCache.savePage(fetched);
       return fetched;
     }),

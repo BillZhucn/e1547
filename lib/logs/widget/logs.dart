@@ -113,7 +113,7 @@ class _LogFileListState extends State<LogFileList> {
                     );
                   }
                   if (files == null) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(child: HexagonalLoadingIndicator());
                   }
                   if (files.isEmpty) {
                     return const IconMessage(
@@ -369,6 +369,9 @@ class _LogPageState extends State<LogPage> {
                 ],
               ),
             ),
+            floatingActionButtonLocation: Handedness.of(
+              context,
+            ).floatingActionButtonLocation,
             floatingActionButton: items.isEmpty
                 ? null
                 : FloatingActionButton(

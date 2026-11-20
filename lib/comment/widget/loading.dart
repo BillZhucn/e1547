@@ -15,7 +15,7 @@ class CommentLoadingPage extends StatelessWidget {
     return QueryBuilder(
       query: client.comments.useGet(id: id),
       builder: (context, state) => LoadingPage(
-        isLoading: state.isLoading,
+        isLoading: state.isLoading || state.isInitial,
         isError: state.isError,
         isEmpty: state.data == null,
         loadingBuilder: (context, child) => Scaffold(
@@ -25,6 +25,8 @@ class CommentLoadingPage extends StatelessWidget {
           ),
           body: child(context),
         ),
+        skeleton: (context) =>
+            PostCommentsPage(postId: const CommentGhost().postId),
         onError: const Text('Failed to load comment'),
         onEmpty: const Text('Comment not found'),
         child: (context) => PostCommentsPage(postId: state.data!.postId),

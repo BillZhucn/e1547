@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [21.2.0+108] - 2026-11-19
+### Added
+- Swipe to close setting
+- Metatag suggestions
+- Recommended posts
+- Dtext post thumbnails
+- Comment avatars
+
+## [21.1.2+106] - 2026-11-18
+### Fixed
+- e6 API
+
+## [21.1.1+105] - 2026-10-21
+### Fixed
+- Image pinch zoom
+
+## [21.1.0+104] - 2026-10-20
+### Added
+- Swipe to close image
+- Preferred hand setting
+
+### Fixed
+- Video player crashes
+- Database export on iOS
+- Blacklist not applying
+
 ## [21.0.1+103] - 2026-09-02
 ### Fixed
 - Videos playing on after swiping away from them
@@ -972,6 +998,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - API client bindings
 
+[21.2.0+108]: https://github.com/clragon/e1547/compare/21.1.2+106...21.2.0+108
+[21.1.2+106]: https://github.com/clragon/e1547/compare/21.1.1+105...21.1.2+106
+[21.1.1+105]: https://github.com/clragon/e1547/compare/21.1.0+104...21.1.1+105
+[21.1.0+104]: https://github.com/clragon/e1547/compare/21.0.1+103...21.1.0+104
 [21.0.1+103]: https://github.com/clragon/e1547/compare/21.0.0+102...21.0.1+103
 [21.0.0+102]: https://github.com/clragon/e1547/compare/20.5.0+101...21.0.0+102
 [20.5.0+101]: https://github.com/clragon/e1547/compare/20.4.0+100...20.5.0+101

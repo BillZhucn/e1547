@@ -19,6 +19,10 @@ class PostFilter extends FilterController<Post>
 
   final Map<int, _PostFilterCache> _filterCache = {};
 
+  static const Duration _staleAfter = Duration(minutes: 5);
+
+  DateTime _evictedAt = DateTime.now();
+
   void _updateDenyList() {
     _filterCache.clear();
     notifyListeners();
@@ -28,7 +32,9 @@ class PostFilter extends FilterController<Post>
   Object idOf(Post post) => post.id;
 
   @override
-  bool filter(Post post) => !denies(post);
+  bool filter(Post post) => allows(post);
+
+  bool allows(PostSummary post) => !denies(post);
 
   @override
   PostFilterValue get value => _value;
@@ -98,15 +104,17 @@ class PostFilter extends FilterController<Post>
     return counts;
   }
 
-  List<String> entriesFor(Post post) {
-    _evictStaleEntries();
+  List<String> entriesFor(PostSummary post) {
+    final now = DateTime.now();
+    _evictStaleEntries(now);
 
     final cached = _filterCache[post.id];
-    final now = DateTime.now();
 
-    if (cached == null || cached.hash != post.hashCode) {
+    if (cached == null ||
+        (!identical(cached.post, post) && cached.hash != post.hashCode)) {
       final deniers = post.getDeniers(client.traits.value.denylist).toList();
       _filterCache[post.id] = (
+        post: post,
         hash: post.hashCode,
         entries: deniers,
         lastAccessed: now,
@@ -115,6 +123,7 @@ class PostFilter extends FilterController<Post>
     }
 
     _filterCache[post.id] = (
+      post: post,
       hash: cached.hash,
       entries: cached.entries,
       lastAccessed: now,
@@ -122,18 +131,21 @@ class PostFilter extends FilterController<Post>
     return cached.entries;
   }
 
-  void _evictStaleEntries() {
-    final cutoff = DateTime.now().subtract(const Duration(minutes: 1));
+  void _evictStaleEntries(DateTime now) {
+    if (now.difference(_evictedAt) < _staleAfter) return;
+    _evictedAt = now;
+    final cutoff = now.subtract(_staleAfter);
     _filterCache.removeWhere((_, entry) => entry.lastAccessed.isBefore(cutoff));
   }
 
-  bool denies(Post post) {
+  bool blocks(PostSummary post) {
     if (!denying) return false;
+    return entriesFor(post).any((entry) => !allowedEntries.contains(entry));
+  }
+
+  bool denies(PostSummary post) {
     if (allowedPosts.contains(post.id)) return false;
-    final activeEntries = entriesFor(
-      post,
-    ).where((entry) => !allowedEntries.contains(entry));
-    return activeEntries.isNotEmpty;
+    return blocks(post);
   }
 
   @override
@@ -147,13 +159,14 @@ class FavoritePostFilter extends PostFilter {
   FavoritePostFilter(super.client, [super.value]);
 
   @override
-  bool filter(Post post) {
+  bool allows(PostSummary post) {
     if (post.isFavorited) return true;
-    return super.filter(post);
+    return super.allows(post);
   }
 }
 
 typedef _PostFilterCache = ({
+  PostSummary post,
   int hash,
   List<String> entries,
   DateTime lastAccessed,
